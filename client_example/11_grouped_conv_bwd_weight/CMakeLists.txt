@@ -1,2 +1,3 @@
 add_executable(client_grouped_conv2d_bwd_weight grouped_conv2d_bwd_weight.cpp)
 target_link_libraries(client_grouped_conv2d_bwd_weight PRIVATE composable_kernel::device_operations)
+target_compile_features(client_grouped_conv2d_bwd_weight PRIVATE cxx_std_17)

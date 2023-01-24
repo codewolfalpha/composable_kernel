@@ -6,7 +6,8 @@
 #include <vector>
 #include <array>
 #include <algorithm>
-#include <getopt.h>
+
+#include "ck/utility/cli.hpp"
 
 #include "ck/ck.hpp"
 #include "ck/utility/reduction_enums.hpp"
@@ -19,101 +20,57 @@
 #include "ck/library/utility/host_tensor_generator.hpp"
 #include "ck/library/utility/host_common_util.hpp"
 
-static struct option long_options[] = {{"inLengths", required_argument, nullptr, 'D'},
-                                       {"verify", required_argument, nullptr, 'v'},
-                                       {"help", no_argument, nullptr, '?'},
-                                       {nullptr, 0, nullptr, 0}};
-
-class SimpleAppArgs
+namespace Common
 {
-    private:
-    int option_index = 0;
-
+    class App : public CLI::App
+    {
     public:
-    std::vector<size_t> inLengths = {600, 28, 28, 256};
-    size_t n, h, w, c;
-
-    bool do_verification = true;
-    int init_method      = 2;
-    bool time_kernel     = true;
-
-    public:
-    SimpleAppArgs()
-    {
-        n = inLengths[0];
-        h = inLengths[1];
-        w = inLengths[2];
-        c = inLengths[3];
-    };
-
-    void show_usage(const char* cmd)
-    {
-        std::cout << "Usage of " << cmd << std::endl;
-        std::cout << "--inLengths or -D, comma separated list of input tensor dimension lengths"
-                  << std::endl;
-        std::cout << "--verify or -v, 1/0 to indicate whether to verify the reduction result by "
-                     "comparing with the host-based reduction"
-                  << std::endl;
-        std::cout << "Arg1 -- init method (0=no init, 1=single integer value, 2=scope integer "
-                     "value, 3=decimal value)"
-                  << std::endl;
-        std::cout << "Arg2 -- time kernel (0=no, 1=yes)" << std::endl;
-    };
-
-    int processArgs(int argc, char* argv[])
-    {
-        using ck::host_common::getTypeValuesFromString;
-
-        int ch;
-
-        while(1)
+        App()
+            : n{ inLengths[0] },
+              h{ inLengths[1] },
+              w{ inLengths[2] },
+              c{ inLengths[3] }
         {
-            ch = getopt_long(argc, argv, "D:v:l:", long_options, &option_index);
-            if(ch == -1)
-                break;
-            switch(ch)
-            {
-            case 'D':
-                if(!optarg)
-                    throw std::runtime_error("Invalid option format!");
+            add_option("--inLengths, -D", inLengths,
+                       "Comma separated list of input tensor dimension lengths")
+                ->delimiter(',')
+                ->check(CLI::PositiveNumber)
+                ->expected(4);
 
-                inLengths = getTypeValuesFromString<size_t>(optarg);
-                if(inLengths.size() != 4)
-                    throw std::runtime_error(
-                        "Invalid option format! The number of integers is incorrect!");
+            add_flag("--verify, -v", do_verification,
+                     "Verify the reduction result by comparing with the host-based "
+                     " reduction (default off)");
 
-                break;
-            case 'v':
-                if(!optarg)
-                    throw std::runtime_error("Invalid option format!");
+            add_flag("--time-kernel, -T",
+                     time_kernel,
+                     "Measure execution time of a kernel (default off)");
 
-                do_verification = static_cast<bool>(std::atoi(optarg));
-                break;
-            case '?':
-                if(std::string(long_options[option_index].name) == "help")
-                {
-                    show_usage(argv[0]);
-                    return (-1);
-                };
-                break;
-            default: show_usage(argv[0]); return (-1);
-            };
-        };
+            std::map<std::string, ck::InitMethod> initMap{
+                {"none", ck::InitMethod::NoInit},
+                {"single", ck::InitMethod::SingleInteger},
+                {"scope", ck::InitMethod::ScopeInteger},
+                {"decimal", ck::InitMethod::DecimalValue}};
 
-        if(optind + 2 > argc)
-            throw std::runtime_error("Invalid cmd-line arguments, more argumetns are needed!");
+            add_option("init_method",
+                       init_method,
+                       "Initialize method used for bnScale and bnBias")
+                ->required()
+                ->transform(CLI::Transformer(initMap, CLI::ignore_case)
+                                .description(keys(initMap)));
+        }
 
-        init_method = std::atoi(argv[optind++]);
-        time_kernel = static_cast<bool>(std::atoi(argv[optind]));
+        [[nodiscard]] virtual int Execute() const {
+            return 0;
+        }
+    protected:
+        std::vector<size_t> inLengths = { 600, 28, 28, 256 };
+        size_t n, h, w, c;
 
-        n = inLengths[0];
-        h = inLengths[1];
-        w = inLengths[2];
-        c = inLengths[3];
-
-        return (0);
+        bool do_verification = true;
+        ck::InitMethod init_method = ck::InitMethod::ScopeInteger;
+        bool time_kernel = true;
     };
-};
+}
 
 template <typename InDataType, typename OutDataType1, typename OutDataType2, typename AccDataType>
 static void mean_meansquare_host(const Tensor<InDataType>& in,
@@ -196,7 +153,7 @@ int mean_meansquare_dual_reduce_test(size_t n,
                                      size_t w,
                                      size_t c,
                                      bool do_verification,
-                                     int init_method,
+                                     ck::InitMethod init_method,
                                      bool time_kernel,
                                      const std::array<int, NumReduceDim> reduceDims)
 {
@@ -226,10 +183,18 @@ int mean_meansquare_dual_reduce_test(size_t n,
     {
         switch(init_method)
         {
-        case 0: break;
-        case 1: in.GenerateTensorValue(GeneratorTensor_1<InDataType>{1}, num_thread); break;
-        case 2: in.GenerateTensorValue(GeneratorTensor_2<InDataType>{-5, 5}, num_thread); break;
-        default: in.GenerateTensorValue(GeneratorTensor_3<InDataType>{-5.0, 5.0}, num_thread);
+        case ck::InitMethod::NoInit:
+            break;
+        case ck::InitMethod::SingleInteger:
+            in.GenerateTensorValue(GeneratorTensor_1<InDataType>{1}, num_thread);
+            break;
+        case ck::InitMethod::ScopeInteger:
+            in.GenerateTensorValue(GeneratorTensor_2<InDataType>{-5, 5}, num_thread);
+            break;
+        default:
+        case ck::InitMethod::DecimalValue:
+            in.GenerateTensorValue(GeneratorTensor_3<InDataType>{-5.0, 5.0}, num_thread);
+            break;
         }
     };
 
@@ -306,7 +271,7 @@ int mean_meansquare_dual_reduce_test(size_t n,
     {
         mean_dev.FromDevice(mean.mData.data());
         meansquare_dev.FromDevice(meansquare.mData.data());
-        pass = pass && ck::utils::check_err(mean, mean_ref);
+        pass = ck::utils::check_err(mean, mean_ref);
         pass = pass && ck::utils::check_err(meansquare, meansquare_ref);
     };
 

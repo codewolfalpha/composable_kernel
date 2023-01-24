@@ -6,6 +6,8 @@
 #include <iomanip>
 #include <stdexcept>
 
+#include "ck/utility/init_method.hpp"
+
 #include "ck/ck.hpp"
 #include "ck/tensor_operation/gpu/element/element_wise_operation.hpp"
 #include "ck/library/utility/check_err.hpp"
@@ -28,7 +30,7 @@ template <typename XDataType,
           index_t Rank,
           index_t NumBatchNormReduceDim>
 bool profile_batchnorm_backward_impl(bool do_verification,
-                                     int init_method,
+                                     InitMethod init_method,
                                      bool do_dumpout,
                                      bool time_kernel,
                                      const std::vector<size_t> inOutLengths,
@@ -130,21 +132,22 @@ bool profile_batchnorm_backward_impl(bool do_verification,
     {
         switch(init_method)
         {
-        case 0:
+        case InitMethod::NoInit:
             dy.GenerateTensorValue(GeneratorTensor_0<DyDataType>{}, num_thread);
             bnScale.GenerateTensorValue(GeneratorTensor_0<ScaleDataType>{}, num_thread);
             break;
-        case 1:
+        case InitMethod::SingleInteger:
             dy.GenerateTensorValue(GeneratorTensor_1<DyDataType>{1}, num_thread);
             bnScale.GenerateTensorValue(GeneratorTensor_1<ScaleDataType>{1}, num_thread);
             break;
-        case 2:
+        case InitMethod::ScopeInteger:
             dy.GenerateTensorValue(GeneratorTensor_2<DyDataType>{-2, 2}, num_thread);
             bnScale.GenerateTensorValue(GeneratorTensor_2<ScaleDataType>{-5, 5}, num_thread);
             break;
-        default:
+        case InitMethod::DecimalValue:
             dy.GenerateTensorValue(GeneratorTensor_3<DyDataType>{-0.2f, 0.2f}, num_thread);
             bnScale.GenerateTensorValue(GeneratorTensor_3<ScaleDataType>{-0.5f, 0.5f}, num_thread);
+            break;
         }
     };
 

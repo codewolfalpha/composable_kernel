@@ -4,122 +4,26 @@
 #include <iostream>
 #include <initializer_list>
 #include <cstdlib>
-#include <getopt.h>
 
+#include "ck/utility/cli.hpp"
 #include "ck/utility/reduction_enums.hpp"
+
 #include "reduce_blockwise_impl.hpp"
 #include "reduce_example_common.hpp"
 
-using namespace ck;
 using namespace ck::tensor_operation::device;
 
-static struct option long_options[] = {{"inLengths", required_argument, nullptr, 'D'},
-                                       {"verify", required_argument, nullptr, 'v'},
-                                       {"help", no_argument, nullptr, '?'},
-                                       {nullptr, 0, nullptr, 0}};
-
-class SimpleAppArgs
-{
-    private:
-    int option_index = 0;
-
-    public:
-    std::vector<size_t> inLengths = {16, 64, 32, 960};
-    std::vector<int> reduceDims   = {0, 1, 2};
-    std::vector<float> scales     = {1.0f, 0.0f};
-
-    bool do_verification = true;
-    int data_type        = 1;
-    int init_method      = 2;
-    bool time_kernel     = true;
-
-    public:
-    void show_usage(const char* cmd)
-    {
-        std::cout << "Usage of " << cmd << std::endl;
-        std::cout << "--inLengths or -D, comma separated list of input tensor dimension lengths"
-                  << std::endl;
-        std::cout << "--reduceDims or -R, comma separated list of to-reduce dimensions"
-                  << std::endl;
-        std::cout << "--verify or -v, 1/0 to indicate whether to verify the reduction result by "
-                     "comparing with the host-based reduction"
-                  << std::endl;
-        std::cout << "Arg1: data type (0: fp16, 1: fp32, 3: int8, 5: bp16, 6: fp64, 7: int4)"
-                  << std::endl;
-        std::cout << "Arg2 -- init method (0=no init, 1=single integer value, 2=scope integer "
-                     "value, 3=decimal value)"
-                  << std::endl;
-        std::cout << "Arg3 -- time kernel (0=no, 1=yes)" << std::endl;
-    };
-
-    int processArgs(int argc, char* argv[])
-    {
-        using ck::host_common::getTypeValuesFromString;
-
-        int ch;
-
-        while(1)
-        {
-            ch = getopt_long(argc, argv, "D:R:v:l:", long_options, &option_index);
-            if(ch == -1)
-                break;
-            switch(ch)
-            {
-            case 'D':
-                if(!optarg)
-                    throw std::runtime_error("Invalid option format!");
-
-                inLengths = getTypeValuesFromString<size_t>(optarg);
-                break;
-            case 'R':
-                if(!optarg)
-                    throw std::runtime_error("Invalid option format!");
-
-                reduceDims = getTypeValuesFromString<int>(optarg);
-                break;
-            case 'v':
-                if(!optarg)
-                    throw std::runtime_error("Invalid option format!");
-
-                do_verification = static_cast<bool>(std::atoi(optarg));
-                break;
-            case '?':
-                if(std::string(long_options[option_index].name) == "help")
-                {
-                    show_usage(argv[0]);
-                    return (-1);
-                };
-                break;
-            default: show_usage(argv[0]); return (-1);
-            };
-        };
-
-        if(optind + 3 > argc)
-        {
-            throw std::runtime_error("Invalid cmd-line arguments, more argumetns are needed!");
-        };
-
-        data_type   = std::atoi(argv[optind++]);
-        init_method = std::atoi(argv[optind++]);
-        time_kernel = static_cast<bool>(std::atoi(argv[optind]));
-
-        if(scales.empty())
-        {
-            scales.push_back(1.0f);
-            scales.push_back(0.0f);
-        };
-
-        return (0);
-    };
-};
+constexpr ck::ReduceTensorOp ReduceOpId = ck::ReduceTensorOp::AVG;
+constexpr bool PropagateNan         = true;
+constexpr bool OutputIndex          = false;
 
 template <typename InOutDataType,
           typename AccDataType,
-          ReduceTensorOp ReduceOpId,
-          index_t PropagateNan,
-          index_t OutputIndex>
+          ck::ReduceTensorOp ReduceOpId,
+          ck::index_t PropagateNan,
+          ck::index_t OutputIndex>
 bool reduce_blockwise_test(bool do_verification,
-                           int init_method,
+                           ck::InitMethod init_method,
                            bool time_kernel,
                            const std::vector<size_t>& inLengths,
                            const std::vector<int>& reduceDims,
@@ -131,16 +35,16 @@ bool reduce_blockwise_test(bool do_verification,
 
     const auto tuple_object = reduce_shape_instances{};
 
-    static_for<0, std::tuple_size<reduce_shape_instances>::value, 1>{}([&](auto i) {
+    ck::static_for<0, std::tuple_size<reduce_shape_instances>::value, 1>{}([&](auto i) {
         if(matched)
             return;
 
-        using ShapeType = remove_cvref_t<decltype(std::get<i>(tuple_object))>;
+        using ShapeType = ck::remove_cvref_t<decltype(std::get<i>(tuple_object))>;
 
         if(ShapeType::Rank_ != inLengths.size() || ShapeType::NumReduceDim_ != reduceDims.size())
             return;
 
-        std::array<int, ShapeType::NumReduceDim_> arrReduceDims;
+        std::array<int, ShapeType::NumReduceDim_> arrReduceDims{};
 
         ck::ranges::copy(reduceDims, arrReduceDims.begin());
 
@@ -156,144 +60,167 @@ bool reduce_blockwise_test(bool do_verification,
         matched = true;
     });
 
-    return (result == 0) ? true : false;
+    return (result == 0);
 };
 
-constexpr ReduceTensorOp ReduceOpId = ReduceTensorOp::AVG;
-constexpr bool PropagateNan         = true;
-constexpr bool OutputIndex          = false;
+class App final : public CLI::App
+{
+public:
+    App()
+    {
+        add_option("--inLengths, -D",
+                   inLengths,
+                   "Comma separated list of input tensor dimension lengths")
+            ->delimiter(',')
+            ->check(CLI::PositiveNumber)
+            ->expected(4);
+
+        add_option("--reduceDims, -R",
+                   reduceDims,
+                   "Comma separated list of to-reduce dimensions")
+            ->delimiter(',')
+            ->check(CLI::Number)
+            ->expected(3);
+
+        add_flag("--verify, -v",
+                 do_verification,
+                 "Indicate whether to verify the reduction result by comparing "
+                 "with the host-based reduction (default off)");
+
+        add_flag("--time-kernel, -T",
+                 time_kernel,
+                 "Measure execution time of a kernel (default off)");
+
+        std::map<std::string, ck::DataType> dataMap{
+            {"fp16", ck::DataType::fp16},
+            {"fp32", ck::DataType::fp32},
+            {"int8", ck::DataType::int8},
+            {"bp16", ck::DataType::bp16},
+            {"fp64", ck::DataType::fp64}};
+
+        add_option("data_type",
+                   data_type,
+                   "The data type to use for computations")
+            ->required()
+            ->transform(CLI::Transformer(dataMap, CLI::ignore_case)
+                            .description(keys(dataMap)));
+
+        std::map<std::string, ck::InitMethod> initMap{
+            {"none", ck::InitMethod::NoInit},
+            {"single", ck::InitMethod::SingleInteger},
+            {"scope", ck::InitMethod::ScopeInteger},
+            {"decimal", ck::InitMethod::DecimalValue}};
+
+        add_option("init_method",
+                   init_method,
+                   "Initialize method used for bnScale and bnBias")
+            ->required()
+            ->transform(CLI::Transformer(initMap, CLI::ignore_case)
+                            .description(keys(initMap)));
+    }
+
+    [[nodiscard]] bool Execute() const {
+        if(data_type == ck::DataType::fp16)
+        {
+            return reduce_blockwise_test<ck::half_t, float, ReduceOpId, PropagateNan, OutputIndex>(
+                do_verification, init_method, time_kernel, inLengths, reduceDims, scales[0], scales[1]);
+        }
+        if(data_type == ck::DataType::fp32)
+        {
+            return reduce_blockwise_test<float, float, ReduceOpId, PropagateNan, OutputIndex>(
+                do_verification, init_method, time_kernel, inLengths, reduceDims, scales[0], scales[1]);
+        }
+        if(data_type == ck::DataType::int8)
+        {
+            return reduce_blockwise_test<int8_t, float, ReduceOpId, PropagateNan, OutputIndex>(
+                do_verification, init_method, time_kernel, inLengths, reduceDims, scales[0], scales[1]);
+        }
+        if(data_type == ck::DataType::bp16)
+        {
+            return reduce_blockwise_test<ck::bhalf_t, float, ReduceOpId, PropagateNan, OutputIndex>(
+                do_verification, init_method, time_kernel, inLengths, reduceDims, scales[0], scales[1]);
+        }
+        if(data_type == ck::DataType::fp64)
+        {
+            return reduce_blockwise_test<double, double, ReduceOpId, PropagateNan, OutputIndex>(
+                do_verification, init_method, time_kernel, inLengths, reduceDims, scales[0], scales[1]);
+        }
+#ifdef CK_EXPERIMENTAL_BIT_INT_EXTENSION_INT4
+        if(data_type == ck::DataType::int4)
+        {
+            auto pass = reduce_blockwise_test<ck::int4_t, int32_t, ck::ReduceTensorOp::AVG, false, false>(
+                do_verification, init_method, time_kernel, inLengths, reduceDims, scales[0], scales[1]);
+
+            return pass && reduce_blockwise_test<ck::int4_t, int8_t, ck::ReduceTensorOp::MAX, false, false>(
+                do_verification, init_method, time_kernel, inLengths, reduceDims, scales[0], scales[1]);
+        }
+#endif
+        return false;
+    }
+
+private:
+    std::vector<size_t> inLengths = {16, 64, 32, 960};
+    std::vector<int> reduceDims = {0, 1, 2};
+    std::vector<float> scales = {1.0f, 0.0f};
+    ck::DataType data_type = ck::DataType::fp32;
+    ck::InitMethod init_method = ck::InitMethod::ScopeInteger;
+    bool time_kernel = true;
+    bool do_verification = true;
+};
 
 int main(int argc, char* argv[])
 {
-    bool pass = true;
-
-    if(argc > 1)
+    try
     {
-        SimpleAppArgs arg;
+        App app;
+        CLI11_PARSE(app, argc, argv);
 
-        if(arg.processArgs(argc, argv) < 0)
-            return (-1);
-
-        if(arg.data_type == 0)
-        {
-            pass = reduce_blockwise_test<ck::half_t, float, ReduceOpId, PropagateNan, OutputIndex>(
-                arg.do_verification,
-                arg.init_method,
-                arg.time_kernel,
-                arg.inLengths,
-                arg.reduceDims,
-                arg.scales[0],
-                arg.scales[1]);
-        }
-        else if(arg.data_type == 1)
-        {
-            pass = reduce_blockwise_test<float, float, ReduceOpId, PropagateNan, OutputIndex>(
-                arg.do_verification,
-                arg.init_method,
-                arg.time_kernel,
-                arg.inLengths,
-                arg.reduceDims,
-                arg.scales[0],
-                arg.scales[1]);
-        }
-        else if(arg.data_type == 3)
-        {
-            pass = reduce_blockwise_test<int8_t, float, ReduceOpId, PropagateNan, OutputIndex>(
-                arg.do_verification,
-                arg.init_method,
-                arg.time_kernel,
-                arg.inLengths,
-                arg.reduceDims,
-                arg.scales[0],
-                arg.scales[1]);
-        }
-        else if(arg.data_type == 5)
-        {
-            pass = reduce_blockwise_test<ck::bhalf_t, float, ReduceOpId, PropagateNan, OutputIndex>(
-                arg.do_verification,
-                arg.init_method,
-                arg.time_kernel,
-                arg.inLengths,
-                arg.reduceDims,
-                arg.scales[0],
-                arg.scales[1]);
-        }
-        else if(arg.data_type == 6)
-        {
-            pass = reduce_blockwise_test<double, double, ReduceOpId, PropagateNan, OutputIndex>(
-                arg.do_verification,
-                arg.init_method,
-                arg.time_kernel,
-                arg.inLengths,
-                arg.reduceDims,
-                arg.scales[0],
-                arg.scales[1]);
-        }
-#ifdef CK_EXPERIMENTAL_BIT_INT_EXTENSION_INT4
-        else if(arg.data_type == 7)
-        {
-            pass = reduce_blockwise_test<int4_t, int32_t, ReduceTensorOp::AVG, false, false>(
-                arg.do_verification,
-                arg.init_method,
-                arg.time_kernel,
-                arg.inLengths,
-                arg.reduceDims,
-                arg.scales[0],
-                arg.scales[1]);
-
-            pass = pass && reduce_blockwise_test<int4_t, int8_t, ReduceTensorOp::MAX, false, false>(
-                               arg.do_verification,
-                               arg.init_method,
-                               arg.time_kernel,
-                               arg.inLengths,
-                               arg.reduceDims,
-                               arg.scales[0],
-                               arg.scales[1]);
-        }
-#endif
+        return app.Execute() ? 0 : 1;
     }
-    else
+    catch (const std::exception&)
     {
         // for testing half_t
-        pass =
-            pass && reduce_blockwise_test<ck::half_t, float, ReduceOpId, PropagateNan, OutputIndex>(
-                        true, 2, true, {16, 64, 32, 960}, {0, 1, 2}, 1.0f, 0.0f);
+        auto pass = reduce_blockwise_test<ck::half_t, float, ReduceOpId, PropagateNan, OutputIndex>(
+                        true, ck::InitMethod::ScopeInteger, true, {16, 64, 32, 960}, {0, 1, 2}, 1.0f, 0.0f);
 
         // for testing float
         pass = pass && reduce_blockwise_test<float, float, ReduceOpId, PropagateNan, OutputIndex>(
-                           true, 2, true, {16, 64, 32, 960}, {0, 1, 2}, 1.0f, 0.0f);
+                        true, ck::InitMethod::ScopeInteger, true, {16, 64, 32, 960}, {0, 1, 2}, 1.0f, 0.0f);
 
         // for testing double
         pass = pass && reduce_blockwise_test<float, float, ReduceOpId, PropagateNan, OutputIndex>(
-                           true, 2, true, {16, 64, 32, 960}, {0, 1, 2}, 1.0f, 0.0f);
+                        true, ck::InitMethod::ScopeInteger, true, {16, 64, 32, 960}, {0, 1, 2}, 1.0f, 0.0f);
 
         // for testing bhalf_t
-        pass = pass &&
-               reduce_blockwise_test<ck::bhalf_t, float, ReduceOpId, PropagateNan, OutputIndex>(
-                   true, 2, true, {16, 64, 32, 960}, {0, 1, 2}, 1.0f, 0.0f);
+        pass = pass && reduce_blockwise_test<ck::bhalf_t, float, ReduceOpId, PropagateNan, OutputIndex>(
+                        true, ck::InitMethod::ScopeInteger, true, {16, 64, 32, 960}, {0, 1, 2}, 1.0f, 0.0f);
 
         // for testing int8_t
         pass =
             pass && reduce_blockwise_test<int8_t, int32_t, ReduceOpId, PropagateNan, OutputIndex>(
-                        true, 2, true, {16, 64, 32, 960}, {0, 1, 2}, 1.0f, 0.0f);
+                        true, ck::InitMethod::ScopeInteger, true, {16, 64, 32, 960}, {0, 1, 2}, 1.0f, 0.0f);
 
 #ifdef CK_EXPERIMENTAL_BIT_INT_EXTENSION_INT4
         // for testing int4_t using AVG operation
-        pass = pass && reduce_blockwise_test<int4_t, int32_t, ReduceTensorOp::AVG, false, false>(
-                           true, 2, true, {16, 64, 32, 960}, {0, 1, 2}, 1.0f, 0.0f);
+        pass = pass && reduce_blockwise_test<ck::int4_t, int32_t, ck::ReduceTensorOp::AVG, false, false>(
+                        true, ck::InitMethod::ScopeInteger, true, {16, 64, 32, 960}, {0, 1, 2}, 1.0f, 0.0f);
 
         // for testing int4_t using MAX operation
-        pass = pass && reduce_blockwise_test<int4_t, int8_t, ReduceTensorOp::MAX, false, false>(
-                           true, 2, true, {16, 64, 32, 960}, {0, 1, 2}, 1.0f, 0.0f);
+        pass = pass && reduce_blockwise_test<ck::int4_t, int8_t, ck::ReduceTensorOp::MAX, false, false>(
+                        true, ck::InitMethod::ScopeInteger, true, {16, 64, 32, 960}, {0, 1, 2}, 1.0f, 0.0f);
 #endif
         // for testing 3D input
         pass = pass && reduce_blockwise_test<float, float, ReduceOpId, PropagateNan, OutputIndex>(
-                           true, 2, true, {16, 64, 960}, {0, 1}, 1.0f, 0.0f);
+                        true, ck::InitMethod::ScopeInteger, true, {16, 64, 960}, {0, 1}, 1.0f, 0.0f);
 
         // for testing 5D input
         pass = pass && reduce_blockwise_test<float, float, ReduceOpId, PropagateNan, OutputIndex>(
-                           true, 2, true, {16, 64, 32, 2, 960}, {0, 1, 2, 3}, 1.0f, 0.0f);
-    };
+                        true, ck::InitMethod::ScopeInteger, true, {16, 64, 32, 2, 960}, {0, 1, 2, 3}, 1.0f, 0.0f);
 
-    return (pass ? 0 : 1);
+        return pass ? 0 : 1;
+    }
+    catch (...) {
+        std::cerr << "Unknown error occured!" << std::endl;
+        return 1;
+    }
 };

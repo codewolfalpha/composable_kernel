@@ -3,7 +3,8 @@
 
 #include <limits>
 #include <iostream>
-#include <getopt.h>
+
+#include "ck/utility/cli.hpp"
 
 #include "ck/ck.hpp"
 #include "ck/library/utility/check_err.hpp"
@@ -14,101 +15,11 @@
 #include "ck/library/reference_tensor_operation/cpu/reference_batchnorm_backward.hpp"
 #include "ck/tensor_operation/gpu/device/impl/device_batchnorm_backward_impl.hpp"
 
-static struct option long_options[] = {{"inOutLengths", required_argument, nullptr, 'D'},
-                                       {"verify", required_argument, nullptr, 'v'},
-                                       {"help", no_argument, nullptr, '?'},
-                                       {nullptr, 0, nullptr, 0}};
-
-class BatchNormBwdArg
-{
-    private:
-    int option_index = 0;
-
-    public:
-    std::vector<size_t> inOutLengths;
-
-    bool do_verification = false;
-
-    bool haveSavedMeanInvVar;
-
-    int data_type               = 0;
-    int init_method             = 3;
-    bool time_kernel            = false;
-    bool use_multiblock_welford = false;
-
-    public:
-    void show_usage(const char* cmd)
-    {
-        // clang-format off
-        std::cout << "Usage of " << cmd << std::endl;
-        std::cout << "--inOutLengths or -D, comma separated list of input tensor dimension lengths, must have 4 integers for nhwc" << std::endl;
-        std::cout << "--verify or -v, 1/0 to indicate whether to verify the result by comparing with the host-based batch-normalization" << std::endl;
-        std::cout << "Arg1: data type (0: fp16, 1: fp32, 3: int8, 5: bp16, 6: fp64)" << std::endl;
-        std::cout << "Arg2 -- 1/0 to indicate whether to use saved mean and invVariance" << std::endl;
-        std::cout << "Arg3 -- init method used for dy and bnScale (0=no init, 1=single integer value, 2=scope integer value, 3=decimal value)" << std::endl;
-        std::cout << "Arg4 -- time kernel (0=no, 1=yes)" << std::endl;
-        std::cout << "Arg5: use multi-block welford (0=n0, 1=yes)" << std::endl;
-        // clang-format on
-    };
-
-    int processArgs(int argc, char* argv[])
-    {
-        using ck::host_common::getTypeValuesFromString;
-
-        int ch;
-
-        while(1)
-        {
-            ch = getopt_long(argc, argv, "D:v:", long_options, &option_index);
-            if(ch == -1)
-                break;
-            switch(ch)
-            {
-            case 'D':
-                if(!optarg)
-                    throw std::runtime_error("Invalid option format!");
-
-                inOutLengths = getTypeValuesFromString<size_t>(optarg);
-
-                if(inOutLengths.size() != 4)
-                    throw std::runtime_error(
-                        "NHWC tensor layout should have 4 length values specified!");
-                break;
-            case 'v':
-                if(!optarg)
-                    throw std::runtime_error("Invalid option format!");
-
-                do_verification = static_cast<bool>(std::atoi(optarg));
-                break;
-            case '?':
-                if(std::string(long_options[option_index].name) == "help")
-                {
-                    show_usage(argv[0]);
-                    return (-1);
-                };
-                break;
-            default: show_usage(argv[0]); return (-1);
-            };
-        };
-
-        if(optind + 5 > argc)
-            throw std::runtime_error("Invalid cmd-line arguments, more argumetns are needed!");
-
-        data_type              = std::atoi(argv[optind++]);
-        haveSavedMeanInvVar    = std::atoi(argv[optind++]);
-        init_method            = std::atoi(argv[optind++]);
-        time_kernel            = static_cast<bool>(std::atoi(argv[optind++]));
-        use_multiblock_welford = static_cast<bool>(std::atoi(argv[optind]));
-
-        return (0);
-    };
-};
-
 using namespace ck;
 
 template <typename XDataType, typename AccDataType, bool UseMultiblockInK>
 bool bnorm_bwd_nhwc_test(bool do_verification,
-                         int init_method,
+                         InitMethod init_method,
                          bool time_kernel,
                          const std::vector<size_t> inOutLengths,
                          bool haveSavedMeanInvVar,
@@ -191,21 +102,22 @@ bool bnorm_bwd_nhwc_test(bool do_verification,
     {
         switch(init_method)
         {
-        case 0:
+        case InitMethod::NoInit:
             dy.GenerateTensorValue(GeneratorTensor_0<AccDataType>{}, num_thread);
             bnScale.GenerateTensorValue(GeneratorTensor_0<ScaleDataType>{}, num_thread);
             break;
-        case 1:
+        case InitMethod::SingleInteger:
             dy.GenerateTensorValue(GeneratorTensor_1<AccDataType>{1}, num_thread);
             bnScale.GenerateTensorValue(GeneratorTensor_1<ScaleDataType>{1}, num_thread);
             break;
-        case 2:
+        case InitMethod::ScopeInteger:
             dy.GenerateTensorValue(GeneratorTensor_2<AccDataType>{-2, 2}, num_thread);
             bnScale.GenerateTensorValue(GeneratorTensor_2<ScaleDataType>{-5, 5}, num_thread);
             break;
-        default:
+        case InitMethod::DecimalValue:
             dy.GenerateTensorValue(GeneratorTensor_3<AccDataType>{-0.2f, 0.2f}, num_thread);
             bnScale.GenerateTensorValue(GeneratorTensor_3<ScaleDataType>{-0.5f, 0.5f}, num_thread);
+			break;
         }
     };
 
@@ -234,10 +146,10 @@ bool bnorm_bwd_nhwc_test(bool do_verification,
         savedInvVar_dev.ToDevice(savedInvVar.mData.data());
     };
 
-    std::array<index_t, Rank> i_inOutLengths;
-    std::array<index_t, Rank> i_inOutStrides;
-    std::array<index_t, Rank - NumReduceDim> i_scaleBiasMeanVarLengths;
-    std::array<index_t, Rank - NumReduceDim> i_scaleBiasMeanVarStrides;
+    std::array<index_t, Rank> i_inOutLengths{};
+    std::array<index_t, Rank> i_inOutStrides{};
+    std::array<index_t, Rank - NumReduceDim> i_scaleBiasMeanVarLengths{};
+    std::array<index_t, Rank - NumReduceDim> i_scaleBiasMeanVarStrides{};
 
     std::copy(inOutLengths.begin(), inOutLengths.end(), i_inOutLengths.begin());
     std::copy(inOutStrides.begin(), inOutStrides.end(), i_inOutStrides.begin());
@@ -393,114 +305,182 @@ bool bnorm_bwd_nhwc_test(bool do_verification,
         dscale_dev.FromDevice(dscale.data());
         dbias_dev.FromDevice(dbias.data());
 
-        // clang-format off
-        pass = pass && ck::utils::check_err(dbias.mData, dbias_ref.mData, "dBias result:", 2e-4, 2e-4);
+        pass = ck::utils::check_err(dbias.mData, dbias_ref.mData, "dBias result:", 2e-4, 2e-4);
         pass = pass && ck::utils::check_err(dscale.mData, dscale_ref.mData, "dScale result:", 2e-4, 2e-4);
         pass = pass && ck::utils::check_err(dx.mData, dx_ref.mData, "dx result:");
-        // clang-format on
     };
 
     return (pass);
 };
 
-static const double epsilon = std::numeric_limits<float>::epsilon();
+static const double Epsilon = std::numeric_limits<double>::epsilon();
+
+class App final : public CLI::App
+{
+public:
+    App()
+    {
+        add_option("--inOutLengths, -D",
+                   inOutLengths,
+                   "Comma separated list of input tensor dimension lengths, "
+                   "must have 4 integers for nhwc")
+            ->delimiter(',')
+            ->check(CLI::PositiveNumber)
+            ->expected(4);
+
+        add_flag("--verify, -v",
+                 do_verification,
+                 "Indicate whether to verify the batch-normalization result "
+                 "by comparing with the host-based batch-normalization");
+        add_flag("--use-welford, -W",
+                 use_multiblock_welford,
+                 "Use multi-block welford (default is not use)");
+        add_flag("--time-on, -T",
+                 time_kernel,
+                 "Measure time of a kernel execution (default off)");
+        add_flag("--save-on, -S",
+                 saveMeanInvVariance,
+                 "Save the calculated mean and inverted variance (default off)");
+
+        std::map<std::string, DataType> dataMap{
+            {"fp16", DataType::fp16},
+            {"fp32", DataType::fp32},
+            {"bp16", DataType::bp16},
+            {"fp64", DataType::fp64}};
+
+        add_option("data_type",
+                   data_type,
+                   "The data type to use for computations")
+            ->required()
+            ->transform(CLI::Transformer(dataMap, CLI::ignore_case)
+                            .description(keys(dataMap)));
+
+        std::map<std::string, InitMethod> initMap{
+            {"none", InitMethod::NoInit},
+            {"single", InitMethod::SingleInteger},
+            {"scope", InitMethod::ScopeInteger},
+            {"decimal", InitMethod::DecimalValue}};
+
+        add_option("init_method",
+                   init_method,
+                   "Initialize method used for dy and bnScale")
+            ->required()
+            ->transform(CLI::Transformer(initMap, CLI::ignore_case)
+                            .description(keys(initMap)));
+    }
+    App(const App&) = delete;
+    App(App&&) = delete;
+
+    [[nodiscard]] bool Execute() const
+    {
+        if(data_type == DataType::fp16)
+        {
+            if(use_multiblock_welford)
+            {
+                return bnorm_bwd_nhwc_test<ck::half_t, float, true>(do_verification,
+                                                                    init_method,
+                                                                    time_kernel,
+                                                                    inOutLengths,
+                                                                    saveMeanInvVariance,
+                                                                    Epsilon);
+            }
+
+            return bnorm_bwd_nhwc_test<ck::half_t, float, false>(do_verification,
+                                                                 init_method,
+                                                                 time_kernel,
+                                                                 inOutLengths,
+                                                                 saveMeanInvVariance,
+                                                                 Epsilon);
+        }
+        if(data_type == DataType::fp32)
+        {
+            if(use_multiblock_welford)
+            {
+                return bnorm_bwd_nhwc_test<float, float, true>(do_verification,
+                                                               init_method,
+                                                               time_kernel,
+                                                               inOutLengths,
+                                                               saveMeanInvVariance,
+                                                               Epsilon);
+            }
+
+            return bnorm_bwd_nhwc_test<float, float, false>(do_verification,
+                                                            init_method,
+                                                            time_kernel,
+                                                            inOutLengths,
+                                                            saveMeanInvVariance,
+                                                            Epsilon);
+        }
+        if(data_type == DataType::bp16)
+        {
+            if(use_multiblock_welford)
+            {
+                return bnorm_bwd_nhwc_test<ck::bhalf_t, float, true>(do_verification,
+                                                                     init_method,
+                                                                     time_kernel,
+                                                                     inOutLengths,
+                                                                     saveMeanInvVariance,
+                                                                     Epsilon);
+            }
+
+            return bnorm_bwd_nhwc_test<ck::bhalf_t, float, false>(do_verification,
+                                                                  init_method,
+                                                                  time_kernel,
+                                                                  inOutLengths,
+                                                                  saveMeanInvVariance,
+                                                                  Epsilon);
+        }
+        if(data_type == DataType::fp64)
+        {
+            if(use_multiblock_welford)
+            {
+                return bnorm_bwd_nhwc_test<double, double, true>(do_verification,
+                                                                 init_method,
+                                                                 time_kernel,
+                                                                 inOutLengths,
+                                                                 saveMeanInvVariance,
+                                                                 Epsilon);
+            }
+
+            return bnorm_bwd_nhwc_test<double, double, false>(do_verification,
+                                                              init_method,
+                                                              time_kernel,
+                                                              inOutLengths,
+                                                              saveMeanInvVariance,
+                                                              Epsilon);
+        }
+        return false;
+    }
+
+private:
+    std::vector<size_t> inOutLengths{};
+
+    bool do_verification = false;
+    bool saveMeanInvVariance = false;
+
+    DataType data_type = DataType::fp16;
+    InitMethod init_method = InitMethod::DecimalValue;
+    bool time_kernel = false;
+    bool use_multiblock_welford = false;
+};
 
 int main(int argc, char* argv[])
 {
-    bool pass = true;
-
-    if(argc > 1)
+    try
     {
-        BatchNormBwdArg arg;
+        App app;
+        app.parse(argc, argv);
 
-        if(arg.processArgs(argc, argv) < 0)
-            return (-1);
-
-        if(arg.data_type == 0)
-        {
-            if(arg.use_multiblock_welford)
-                pass = bnorm_bwd_nhwc_test<ck::half_t, float, true>(arg.do_verification,
-                                                                    arg.init_method,
-                                                                    arg.time_kernel,
-                                                                    arg.inOutLengths,
-                                                                    arg.haveSavedMeanInvVar,
-                                                                    epsilon);
-            else
-                pass = bnorm_bwd_nhwc_test<ck::half_t, float, false>(arg.do_verification,
-                                                                     arg.init_method,
-                                                                     arg.time_kernel,
-                                                                     arg.inOutLengths,
-                                                                     arg.haveSavedMeanInvVar,
-                                                                     epsilon);
-        }
-        else if(arg.data_type == 1)
-        {
-            if(arg.use_multiblock_welford)
-                pass = bnorm_bwd_nhwc_test<float, float, true>(arg.do_verification,
-                                                               arg.init_method,
-                                                               arg.time_kernel,
-                                                               arg.inOutLengths,
-                                                               arg.haveSavedMeanInvVar,
-                                                               epsilon);
-            else
-                pass = bnorm_bwd_nhwc_test<float, float, false>(arg.do_verification,
-                                                                arg.init_method,
-                                                                arg.time_kernel,
-                                                                arg.inOutLengths,
-                                                                arg.haveSavedMeanInvVar,
-                                                                epsilon);
-        }
-        else if(arg.data_type == 5)
-        {
-            if(arg.use_multiblock_welford)
-                pass = bnorm_bwd_nhwc_test<ck::bhalf_t, float, true>(arg.do_verification,
-                                                                     arg.init_method,
-                                                                     arg.time_kernel,
-                                                                     arg.inOutLengths,
-                                                                     arg.haveSavedMeanInvVar,
-                                                                     epsilon);
-            else
-                pass = bnorm_bwd_nhwc_test<ck::bhalf_t, float, false>(arg.do_verification,
-                                                                      arg.init_method,
-                                                                      arg.time_kernel,
-                                                                      arg.inOutLengths,
-                                                                      arg.haveSavedMeanInvVar,
-                                                                      epsilon);
-        }
-        else if(arg.data_type == 6)
-        {
-            if(arg.use_multiblock_welford)
-                pass = bnorm_bwd_nhwc_test<double, double, true>(arg.do_verification,
-                                                                 arg.init_method,
-                                                                 arg.time_kernel,
-                                                                 arg.inOutLengths,
-                                                                 arg.haveSavedMeanInvVar,
-                                                                 epsilon);
-            else
-                pass = bnorm_bwd_nhwc_test<double, double, false>(arg.do_verification,
-                                                                  arg.init_method,
-                                                                  arg.time_kernel,
-                                                                  arg.inOutLengths,
-                                                                  arg.haveSavedMeanInvVar,
-                                                                  epsilon);
-        }
+        return app.Execute() ? 0 : 1;
     }
-    else
+    catch (const CLI::ParseError&)
     {
-        pass = bnorm_bwd_nhwc_test<ck::half_t, float, true>(true,
-                                                            3,
-                                                            false, // don't time kernel
-                                                            {128, 16, 6, 512},
-                                                            false,
-                                                            epsilon);
+        auto pass = bnorm_bwd_nhwc_test<ck::half_t, float, true>(
+            true, InitMethod::DecimalValue, false, {128, 16, 6, 512}, false, Epsilon);
 
-        pass = pass && bnorm_bwd_nhwc_test<ck::half_t, float, false>(true,
-                                                                     3,
-                                                                     false, // don't time kernel
-                                                                     {128, 16, 3, 1024},
-                                                                     false,
-                                                                     epsilon);
-    };
+        pass = pass && bnorm_bwd_nhwc_test<ck::half_t, float, false>(
+            true, InitMethod::DecimalValue, false, {128, 16, 3, 1024}, false, Epsilon);
 
-    return (pass ? 0 : 1);
+        return pass ? 0 : 1;
+    }
 }

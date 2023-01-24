@@ -8,6 +8,8 @@
 #include <initializer_list>
 #include <numeric>
 
+#include "ck/utility/cli.hpp"
+
 #include "ck/ck.hpp"
 #include "ck/tensor_operation/gpu/device/gemm_specialization.hpp"
 #include "ck/tensor_operation/gpu/device/tensor_layout.hpp"
@@ -22,24 +24,6 @@
 #include "ck/library/utility/literals.hpp"
 #include "ck/library/reference_tensor_operation/cpu/reference_gemm.hpp"
 
-struct ProblemSize final
-{
-    ck::index_t M = 3840;
-    ck::index_t N = 4096;
-    ck::index_t K = 4096;
-
-    ck::index_t StrideA = 4096;
-    ck::index_t StrideB = 4096;
-    ck::index_t StrideC = 4096;
-};
-
-struct ExecutionConfig final
-{
-    bool do_verification = true;
-    int init_method      = 1;
-    bool time_kernel     = false;
-};
-
 template <ck::index_t... Is>
 using S = ck::Sequence<Is...>;
 
@@ -48,42 +32,53 @@ using Col = ck::tensor_layout::gemm::ColumnMajor;
 
 using PassThrough = ck::tensor_operation::element_wise::PassThrough;
 
-inline bool
-parse_cmd_args(int argc, char* argv[], ProblemSize& problem_size, ExecutionConfig& config)
+class App : public CLI::App
 {
-    if(argc == 1)
+public:
+    App()
     {
-        // use default case
-    }
-    else if(argc == 4)
-    {
-        config.do_verification = std::stoi(argv[1]);
-        config.init_method     = std::stoi(argv[2]);
-        config.time_kernel     = std::stoi(argv[3]);
-    }
-    else if(argc == 10)
-    {
-        config.do_verification = std::stoi(argv[1]);
-        config.init_method     = std::stoi(argv[2]);
-        config.time_kernel     = std::stoi(argv[3]);
+        add_option("--stride, -S",
+                   Stride,
+                   "")
+            ->delimiter(',')
+            ->check(CLI::PositiveNumber)
+            ->expected(3);
 
-        problem_size.M = std::stoi(argv[4]);
-        problem_size.N = std::stoi(argv[5]);
-        problem_size.K = std::stoi(argv[6]);
+        add_option("--mnk, -M",
+                   MNK,
+                   "")
+            ->delimiter(',')
+            ->check(CLI::PositiveNumber)
+            ->expected(3);
 
-        problem_size.StrideA = std::stoi(argv[7]);
-        problem_size.StrideB = std::stoi(argv[8]);
-        problem_size.StrideC = std::stoi(argv[9]);
-    }
-    else
-    {
-        std::cerr << "arg1: verification (0=no, 1=yes)" << std::endl
-                  << "arg2: initialization (0=no init, 1=integer value, 2=decimal value)"
-                  << std::endl
-                  << "arg3: time kernel (0=no, 1=yes)" << std::endl
-                  << "arg4 to 9: M (256x), N(128x), K(32x), StrideA, StrideB, StrideC" << std::endl;
-        return false;
+        add_flag("--verify, -v",
+                 do_verification,
+                 "Indicate whether to verify the batch-normalization result "
+                 "by comparing with the host-based batch-normalization (default off)");
+
+        add_flag("--time-kernel, -T",
+                 time_kernel,
+                 "Measure time of a kernel execution (default off)");
+
+        std::map<std::string, ck::InitMethod> initMap{
+            {"none", ck::InitMethod::NoInit},
+            {"integer", ck::InitMethod::SingleInteger},
+            {"decimal", ck::InitMethod::DecimalValue}};
+
+        add_option("init_method",
+                   init_method,
+                   "Initialize method")
+            ->required()
+            ->transform(CLI::Transformer(initMap, CLI::ignore_case)
+                                .description(keys(initMap)));
     }
 
-    return true;
-}
+    [[nodiscard]] virtual bool Execute() const;
+
+protected:
+    bool do_verification = false;
+    bool time_kernel = false;
+    ck::InitMethod init_method = ck::InitMethod::ScopeInteger;
+    std::vector<ck::index_t> MNK{3840, 4096, 4096};
+    std::vector<ck::index_t> Stride = {4096, 4096, 4096};
+};

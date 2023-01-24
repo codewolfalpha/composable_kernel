@@ -1,4 +1,4 @@
-add_library(device_softmax_instance
+add_instance_library(device_softmax_instance
     i8_i8.cpp
     i8_i8_rank3_reduce1.cpp
     i8_i8_rank3_reduce2.cpp

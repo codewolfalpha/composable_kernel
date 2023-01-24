@@ -14,6 +14,7 @@
 #include "ck/library/utility/host_tensor_generator.hpp"
 #include "ck/library/tensor_operation_instance/gpu/batchnorm_forward.hpp"
 #include "ck/library/reference_tensor_operation/cpu/reference_batchnorm_forward.hpp"
+#include "ck/utility/init_method.hpp"
 
 namespace ck {
 namespace profiler {
@@ -26,8 +27,8 @@ template <typename XDataType,
           typename MeanVarDataType,
           index_t Rank,
           index_t NumBatchNormReduceDim>
-bool profile_batchnorm_forward_impl(int do_verification,
-                                    int init_method,
+bool profile_batchnorm_forward_impl(bool do_verification,
+                                    InitMethod init_method,
                                     bool do_dumpout,
                                     bool time_kernel,
                                     const std::vector<size_t> inOutLengths,
@@ -114,21 +115,22 @@ bool profile_batchnorm_forward_impl(int do_verification,
     {
         switch(init_method)
         {
-        case 0:
+        case InitMethod::NoInit:
             bnScale.GenerateTensorValue(GeneratorTensor_0<ScaleDataType>{}, num_thread);
             bnBias.GenerateTensorValue(GeneratorTensor_0<BiasDataType>{}, num_thread);
             break;
-        case 1:
+        case InitMethod::SingleInteger:
             bnScale.GenerateTensorValue(GeneratorTensor_1<ScaleDataType>{1}, num_thread);
             bnBias.GenerateTensorValue(GeneratorTensor_1<BiasDataType>{0}, num_thread);
             break;
-        case 2:
+        case InitMethod::ScopeInteger:
             bnScale.GenerateTensorValue(GeneratorTensor_2<ScaleDataType>{-5, 5}, num_thread);
             bnBias.GenerateTensorValue(GeneratorTensor_2<BiasDataType>{-5, 5}, num_thread);
             break;
-        default:
+        case InitMethod::DecimalValue:
             bnScale.GenerateTensorValue(GeneratorTensor_3<ScaleDataType>{-1.0f, 1.0f}, num_thread);
             bnBias.GenerateTensorValue(GeneratorTensor_3<BiasDataType>{-1.0f, 1.0f}, num_thread);
+			break;
         }
     };
 

@@ -3,7 +3,7 @@
 
 #pragma once
 
-bool run_gemm(const ProblemSize& problem_size, const ExecutionConfig& config)
+bool App::Execute() const
 {
 #if defined(BUILD_INT4_EXAMPLE) && defined(CK_EXPERIMENTAL_BIT_INT_EXTENSION_INT4)
     static_assert(sizeof(ck::int4_t) == sizeof(int8_t));
@@ -11,7 +11,12 @@ bool run_gemm(const ProblemSize& problem_size, const ExecutionConfig& config)
 
     using namespace ck::literals;
 
-    auto& [M, N, K, StrideA, StrideB, StrideC] = problem_size;
+#define M MNK[0]
+#define N MNK[1]
+#define K MNK[2]
+#define StrideA Stride[0]
+#define StrideB Stride[1]
+#define StrideC Stride[2]
 
     auto f_host_tensor_descriptor =
         [](std::size_t row, std::size_t col, std::size_t stride, auto layout) {
@@ -28,16 +33,19 @@ bool run_gemm(const ProblemSize& problem_size, const ExecutionConfig& config)
     Tensor<ADataType> a_m_k(f_host_tensor_descriptor(M, K, StrideA, ALayout{}));
     Tensor<BDataType> b_k_n(f_host_tensor_descriptor(K, N, StrideB, BLayout{}));
 
-    switch(config.init_method)
+    switch(init_method)
     {
-    case 0: break;
-    case 1:
+    case ck::InitMethod::SingleInteger:
         ck::utils::FillUniformDistributionIntegerValue<ADataType>{-5.f, 5.f}(a_m_k);
         ck::utils::FillUniformDistributionIntegerValue<BDataType>{-5.f, 5.f}(b_k_n);
         break;
-    default:
+    case ck::InitMethod::DecimalValue:
         ck::utils::FillUniformDistribution<ADataType>{-1.f, 1.f}(a_m_k);
         ck::utils::FillUniformDistribution<BDataType>{-1.f, 1.f}(b_k_n);
+        break;
+    case ck::InitMethod::NoInit:
+    case ck::InitMethod::ScopeInteger:
+        break;
     }
 
     Tensor<CDataType> c_m_n_host_result(f_host_tensor_descriptor(M, N, StrideC, CLayout{}));
@@ -97,11 +105,10 @@ bool run_gemm(const ProblemSize& problem_size, const ExecutionConfig& config)
     if(!gemm.IsSupportedArgument(argument))
     {
         std::cerr << gemm.GetTypeString() << " does not support this problem" << std::endl;
-
         return true;
     }
 
-    float ave_time = invoker.Run(argument, StreamConfig{nullptr, config.time_kernel});
+    float ave_time = invoker.Run(argument, StreamConfig{nullptr, time_kernel});
 
     std::size_t flop = 2_uz * M * N * K;
     std::size_t num_btype =
@@ -114,7 +121,7 @@ bool run_gemm(const ProblemSize& problem_size, const ExecutionConfig& config)
     std::cout << "Perf: " << ave_time << " ms, " << tflops << " TFlops, " << gb_per_sec << " GB/s, "
               << gemm.GetTypeString() << std::endl;
 
-    if(config.do_verification)
+    if(do_verification)
     {
         auto ref_gemm    = ReferenceGemmInstance{};
         auto ref_invoker = ref_gemm.MakeInvoker();
@@ -144,8 +151,7 @@ bool run_gemm(const ProblemSize& problem_size, const ExecutionConfig& config)
 
 bool run_gemm_example(int argc, char* argv[])
 {
-    ProblemSize problem_size;
-    ExecutionConfig config;
-
-    return !parse_cmd_args(argc, argv, problem_size, config) || run_gemm(problem_size, config);
+    App app;
+    CLI11_PARSE(app, argc, argv);
+    return app.Execute();
 }

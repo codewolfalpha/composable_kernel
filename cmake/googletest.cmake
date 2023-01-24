@@ -30,18 +30,17 @@ FetchContent_Declare(
   GIT_TAG        b85864c64758dec007208e56af933fc3f52044ee
 )
 
-# Will be necessary for windows build
-# set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_GetProperties(googletest)
-if(NOT googletest_POPULATED)
-  FetchContent_Populate(googletest)
-  add_subdirectory(${googletest_SOURCE_DIR} ${googletest_BINARY_DIR} EXCLUDE_FROM_ALL)
-endif()
+FetchContent_MakeAvailable(googletest)
 
 target_compile_options(gtest PRIVATE ${GTEST_CMAKE_CXX_FLAGS})
 target_compile_options(gtest_main PRIVATE ${GTEST_CMAKE_CXX_FLAGS})
 target_compile_options(gmock PRIVATE ${GTEST_CMAKE_CXX_FLAGS})
 target_compile_options(gmock_main PRIVATE ${GTEST_CMAKE_CXX_FLAGS})
+
+target_compile_definitions(gtest PUBLIC GTEST_HAS_SEH=0)
+target_compile_definitions(gtest_main PUBLIC GTEST_HAS_SEH=0)
+target_compile_definitions(gmock PUBLIC GTEST_HAS_SEH=0)
+target_compile_definitions(gmock_main PUBLIC GTEST_HAS_SEH=0)
 
 set_target_properties(gtest PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set_target_properties(gtest_main PROPERTIES POSITION_INDEPENDENT_CODE ON)

@@ -5,7 +5,6 @@
 #include <numeric>
 #include <initializer_list>
 #include <cstdlib>
-#include <getopt.h>
 #include <ctime>
 
 #include "ck/ck.hpp"

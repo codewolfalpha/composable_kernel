@@ -231,31 +231,9 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
 
-include_directories(BEFORE
-    ${PROJECT_SOURCE_DIR}/include
-    ${PROJECT_SOURCE_DIR}/library/include
-    ${HIP_INCLUDE_DIRS}
-)
-
-
 SET(BUILD_DEV ON CACHE BOOL "BUILD_DEV")
-if(BUILD_DEV)
-    add_compile_options(-Werror)
-    add_compile_options(-Weverything)
-endif()
-message("CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
 
 add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -C ${CMAKE_CFG_INTDIR})
-
-file(GLOB_RECURSE INSTANCE_FILES "${PROJECT_SOURCE_DIR}/*/device_*_instance.cpp")
-file(GLOB dir_list RELATIVE ${PROJECT_SOURCE_DIR}/library/src/tensor_operation_instance/gpu ${PROJECT_SOURCE_DIR}/library/src/tensor_operation_instance/gpu/*)
-set(CK_DEVICE_INSTANCES)
-FOREACH(subdir_path ${dir_list})
-    IF(IS_DIRECTORY "${PROJECT_SOURCE_DIR}/library/src/tensor_operation_instance/gpu/${subdir_path}")
-       list(APPEND CK_DEVICE_INSTANCES device_${subdir_path}_instance)
-    ENDIF()
-ENDFOREACH()
-add_custom_target(instances DEPENDS utility;${CK_DEVICE_INSTANCES}  SOURCES ${INSTANCE_FILES})
 
 rocm_package_setup_component(tests
         LIBRARY_NAME composablekernel
@@ -271,6 +249,8 @@ rocm_package_setup_component(profiler
         LIBRARY_NAME composablekernel
         PACKAGE_NAME ckProfiler
 )
+
+include(CLI11)
 
 add_subdirectory(library)
 add_subdirectory(example)

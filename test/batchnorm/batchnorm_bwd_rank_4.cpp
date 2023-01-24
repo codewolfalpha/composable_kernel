@@ -52,7 +52,7 @@ class TestBatchNormBwdRank4 : public ::testing::Test
                                                                          MeanVarDataType,
                                                                          4,
                                                                          NumReduceDim>(
-                               true, 3, false, false, inOutLengths, reduceDims, true, epsilon);
+                              true, ck::InitMethod::ScopeInteger, false, false, inOutLengths, reduceDims, true, epsilon);
 
             pass = pass && ck::profiler::profile_batchnorm_backward_impl<XDataType,
                                                                          DxDataType,
@@ -63,7 +63,7 @@ class TestBatchNormBwdRank4 : public ::testing::Test
                                                                          MeanVarDataType,
                                                                          4,
                                                                          NumReduceDim>(
-                               true, 3, false, false, inOutLengths, reduceDims, false, epsilon);
+                               true, ck::InitMethod::ScopeInteger, false, false, inOutLengths, reduceDims, false, epsilon);
 
             EXPECT_TRUE(pass);
         }

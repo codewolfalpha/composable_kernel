@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2018-2022, Advanced Micro Devices, Inc. All rights reserved.
 
-#pragma
+#pragma once
 
 #include "ck/utility/data_type.hpp"
 #include "profiler/data_type_enum.hpp"

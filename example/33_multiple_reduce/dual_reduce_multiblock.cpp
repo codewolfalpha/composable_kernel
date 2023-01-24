@@ -6,7 +6,6 @@
 #include <vector>
 #include <array>
 #include <algorithm>
-#include <getopt.h>
 
 #include "ck/ck.hpp"
 #include "ck/utility/reduction_enums.hpp"
@@ -54,45 +53,29 @@ using DeviceDualReduce = DeviceMultipleReduceMultiBlock<2,
                                                         1,
                                                         ck::Sequence<1, 1>>;
 
+class App final : public Common::App {
+public:
+    App() : Common::App() {}
+    [[nodiscard]] int Execute() const override  {
+        std::array<int, NumReduceDim> reduceDims = { 1, 2, 3 };
+        return mean_meansquare_dual_reduce_test<DeviceDualReduce, InDataType, OutDataType, AccDataType, Rank, NumReduceDim>(
+            n, h, w, c, do_verification, init_method, time_kernel, reduceDims);
+    }
+};
+
 int main(int argc, char* argv[])
 {
-    int retval = 0;
-
-    if(argc > 1)
+    try
     {
-        SimpleAppArgs arg;
+        App app;
+        app.parse(argc, argv);
 
-        if(arg.processArgs(argc, argv) < 0)
-            return (-1);
-
-        std::array<int, NumReduceDim> reduceDims = {1, 2, 3};
-
-        retval = mean_meansquare_dual_reduce_test<DeviceDualReduce,
-                                                  InDataType,
-                                                  OutDataType,
-                                                  AccDataType,
-                                                  Rank,
-                                                  NumReduceDim>(arg.n,
-                                                                arg.h,
-                                                                arg.w,
-                                                                arg.c,
-                                                                arg.do_verification,
-                                                                arg.init_method,
-                                                                arg.time_kernel,
-                                                                reduceDims);
+        return app.Execute();
     }
-    else
+    catch (const CLI::ParseError&)
     {
         std::array<int, NumReduceDim> reduceDims = {1, 2, 3};
-
-        retval = mean_meansquare_dual_reduce_test<DeviceDualReduce,
-                                                  InDataType,
-                                                  OutDataType,
-                                                  AccDataType,
-                                                  Rank,
-                                                  NumReduceDim>(
-            600, 28, 28, 256, true, 2, true, reduceDims);
-    };
-
-    return (retval);
+        return mean_meansquare_dual_reduce_test<DeviceDualReduce, InDataType, OutDataType, AccDataType, Rank, NumReduceDim>(
+            600, 28, 28, 256, true, InitMethod::ScopeInteger, true, reduceDims);
+    }
 }

@@ -1,35 +1,41 @@
-include_directories(BEFORE
-    ${PROJECT_SOURCE_DIR}/
-    ${PROJECT_SOURCE_DIR}/profiler/include
-)
-
-include(googletest)
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2018-2022, Advanced Micro Devices, Inc. All rights reserved.
 
 add_custom_target(tests)
 
+include(googletest)
+
 function(add_test_executable TEST_NAME)
     message("adding test ${TEST_NAME}")
-    add_executable(${TEST_NAME} ${ARGN})
+    add_executable(${TEST_NAME} ${ARGN} ${CMAKE_SOURCE_DIR}/include/ck/utility/cli.hpp)
+    target_include_directories(${TEST_NAME} PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/library/include
+            ${CMAKE_SOURCE_DIR}/profiler/include
+            ${PROJECT_SOURCE_DIR})
     add_test(NAME ${TEST_NAME} COMMAND $<TARGET_FILE:${TEST_NAME}>)
     add_dependencies(tests ${TEST_NAME})
     add_dependencies(check ${TEST_NAME})
     rocm_install(TARGETS ${TEST_NAME} COMPONENT tests)
-endfunction(add_test_executable TEST_NAME)
-
-include(GoogleTest)
+    target_link_libraries(${TEST_NAME} PRIVATE CLI11)
+endfunction()
 
 function(add_gtest_executable TEST_NAME)
     message("adding gtest ${TEST_NAME}")
-    add_executable(${TEST_NAME} ${ARGN})
+    add_executable(${TEST_NAME} ${ARGN} ${CMAKE_SOURCE_DIR}/include/ck/utility/cli.hpp)
+    target_include_directories(${TEST_NAME} PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/library/include
+            ${CMAKE_SOURCE_DIR}/profiler/include
+            ${PROJECT_SOURCE_DIR})
+    add_test(NAME ${TEST_NAME} COMMAND $<TARGET_FILE:${TEST_NAME}> )
     add_dependencies(tests ${TEST_NAME})
     add_dependencies(check ${TEST_NAME})
-
+    rocm_install(TARGETS ${TEST_NAME} COMPONENT tests)
     # suppress gtest warnings
     target_compile_options(${TEST_NAME} PRIVATE -Wno-global-constructors -Wno-undef)
-    target_link_libraries(${TEST_NAME} PRIVATE gtest_main)
-    add_test(NAME ${TEST_NAME} COMMAND $<TARGET_FILE:${TEST_NAME}> )
-    rocm_install(TARGETS ${TEST_NAME} COMPONENT tests)
-endfunction(add_gtest_executable TEST_NAME)
+    target_link_libraries(${TEST_NAME} PRIVATE gtest_main CLI11)
+endfunction()
 
 add_subdirectory(magic_number_division)
 add_subdirectory(space_filling_curve)

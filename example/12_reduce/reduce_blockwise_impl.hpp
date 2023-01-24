@@ -7,6 +7,7 @@
 
 #include "ck/ck.hpp"
 #include "ck/utility/reduction_enums.hpp"
+#include "ck/utility/init_method.hpp"
 #include "ck/tensor_operation/gpu/device/reduction_operator_mapping.hpp"
 #include "ck/tensor_operation/gpu/device/impl/device_reduce_multiblock.hpp"
 #include "ck/library/reference_tensor_operation/cpu/reference_reduce.hpp"
@@ -28,7 +29,7 @@ template <typename InOutDataType,
           bool PropagateNan,
           bool OutputIndex>
 int reduce_blockwise_impl(bool do_verification,
-                          int init_method,
+                          ck::InitMethod init_method,
                           bool time_kernel,
                           const std::vector<size_t>& inLengths,
                           const std::array<int, NumReduceDim>& reduceDims,
@@ -171,22 +172,24 @@ int reduce_blockwise_impl(bool do_verification,
     {
         switch(init_method)
         {
-        case 0: break;
-        case 1:
+        case ck::InitMethod::NoInit:
+            break;
+        case ck::InitMethod::SingleInteger:
             in.GenerateTensorValue(GeneratorTensor_1<InOutDataType>{1}, num_thread);
             if(beta != 0.0f)
                 out_ref.GenerateTensorValue(GeneratorTensor_1<InOutDataType>{1}, num_thread);
             break;
-        case 2:
+        case ck::InitMethod::ScopeInteger:
             in.GenerateTensorValue(GeneratorTensor_2<InOutDataType>{-5, 5}, num_thread);
             if(beta != 0.0f)
                 out_ref.GenerateTensorValue(GeneratorTensor_2<InOutDataType>{-5, 5}, num_thread);
             break;
-        default:
+        case ck::InitMethod::DecimalValue:
             in.GenerateTensorValue(GeneratorTensor_3<InOutDataType>{-5.0, 5.0}, num_thread);
             if(beta != 0.0f)
                 out_ref.GenerateTensorValue(GeneratorTensor_3<InOutDataType>{-5.0, 5.0},
                                             num_thread);
+			break;
         }
 
         if(beta != 0.0f)

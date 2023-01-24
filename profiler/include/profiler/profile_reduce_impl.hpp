@@ -138,7 +138,7 @@ template <typename InDataType,
           bool PropagateNan,
           bool UseIndex>
 bool profile_reduce_impl_impl(bool do_verification,
-                              int init_method,
+                              InitMethod init_method,
                               bool do_dumpout,
                               bool time_kernel,
                               const std::vector<size_t>& inLengths,
@@ -229,22 +229,24 @@ bool profile_reduce_impl_impl(bool do_verification,
         {
             switch(init_method)
             {
-            case 0: break;
-            case 1:
+            case InitMethod::NoInit:
+                break;
+            case InitMethod::SingleInteger:
                 in.GenerateTensorValue(GeneratorTensor_1<InDataType>{1}, num_thread);
                 if(beta != 0.0f)
                     out_ref.GenerateTensorValue(GeneratorTensor_1<InDataType>{1}, num_thread);
                 break;
-            case 2:
+            case InitMethod::ScopeInteger:
                 in.GenerateTensorValue(GeneratorTensor_2<InDataType>{-5, 5}, num_thread);
                 if(beta != 0.0f)
                     out_ref.GenerateTensorValue(GeneratorTensor_2<InDataType>{-5, 5}, num_thread);
                 break;
-            default:
+            case InitMethod::DecimalValue:
                 in.GenerateTensorValue(GeneratorTensor_3<InDataType>{-5.0, 5.0}, num_thread);
                 if(beta != 0.0f)
                     out_ref.GenerateTensorValue(GeneratorTensor_3<InDataType>{-5.0, 5.0},
                                                 num_thread);
+				break;
             }
 
             if(beta != 0.0f)
@@ -458,7 +460,7 @@ bool profile_reduce_impl_impl(bool do_verification,
 
 template <typename InDataType, typename AccDataType, typename OutDataType>
 bool profile_reduce_impl(bool do_verification,
-                         int init_method,
+                         InitMethod init_method,
                          bool do_dumpout,
                          bool time_kernel,
                          const std::vector<size_t>& inLengths,
