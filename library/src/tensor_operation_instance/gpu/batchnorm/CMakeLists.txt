@@ -1,10 +1,10 @@
 add_instance_library(device_batchnorm_instance
-    device_batchnorm_forward_f16_instance.cpp
-    device_batchnorm_forward_f32_instance.cpp
-    device_batchnorm_forward_bf16_instance.cpp
-    device_batchnorm_forward_f64_instance.cpp
-    device_batchnorm_backward_f16_instance.cpp
-    device_batchnorm_backward_f32_instance.cpp
-    device_batchnorm_backward_bf16_instance.cpp
-    device_batchnorm_backward_f64_instance.cpp
+    forward_f16.cpp
+    forward_f32.cpp
+    forward_bf16.cpp
+    forward_f64.cpp
+    backward_f16.cpp
+    backward_f32.cpp
+    backward_bf16.cpp
+    backward_f64.cpp
 )

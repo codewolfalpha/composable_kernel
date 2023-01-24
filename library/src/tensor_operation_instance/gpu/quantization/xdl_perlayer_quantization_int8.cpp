@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2018-2022, Advanced Micro Devices, Inc. All rights reserved.
 
-#include "device_conv2d_xdl_int8_instance.hpp"
+#include "xdl_int8.hpp"
 
 namespace ck {
 namespace tensor_operation {

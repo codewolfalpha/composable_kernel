@@ -1,6 +1,6 @@
 add_instance_library(device_conv1d_bwd_data_instance
-   device_conv1d_bwd_data_xdl_nwc_kxc_nwk_f16_instance.cpp
-   device_conv1d_bwd_data_xdl_nwc_kxc_nwk_f32_instance.cpp
-   device_conv1d_bwd_data_xdl_nwc_kxc_nwk_bf16_instance.cpp
-   device_conv1d_bwd_data_xdl_nwc_kxc_nwk_int8_instance.cpp
+   xdl_nwc_kxc_nwk_f16.cpp
+   xdl_nwc_kxc_nwk_f32.cpp
+   xdl_nwc_kxc_nwk_bf16.cpp
+   xdl_nwc_kxc_nwk_int8.cpp
 )
