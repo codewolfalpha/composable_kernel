@@ -12,7 +12,9 @@ function(add_instance_library INSTANCE_NAME)
         $<$<CXX_COMPILER_ID:MSVC>:/W4>
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:${CMAKE_COMPILER_WARNINGS}>)
     set_target_properties(${INSTANCE_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-    clang_tidy_check(${INSTANCE_NAME})
+    if(CLANG_TIDY_EXE)
+        clang_tidy_check(${INSTANCE_NAME})
+    endif()
     target_sources(device_operations PRIVATE
         $<TARGET_OBJECTS:${INSTANCE_NAME}>)
 endfunction()

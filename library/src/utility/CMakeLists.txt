@@ -2,12 +2,11 @@
 # Copyright (c) 2018-2022, Advanced Micro Devices, Inc. All rights reserved.
 
 add_library(utility STATIC
-    device_memory.cpp
-    host_tensor.cpp
-    convolution_parameter.cpp
-)
+        device_memory.cpp
+        host_tensor.cpp
+        convolution_parameter.cpp)
 
-add_library(composable_kernel::utility ALIAS utility)
+set_target_properties(utility PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(utility PRIVATE
     ${CMAKE_SOURCE_DIR}/include
@@ -35,4 +34,8 @@ rocm_install(
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/composable_kernel
 )
 
-clang_tidy_check(utility)
+if(CLANG_TIDY_EXE)
+    clang_tidy_check(utility)
+endif()
+
+add_library(composable_kernel::utility ALIAS utility)
