@@ -1,3 +1,9 @@
 new_branch_2
 version 2
 pr 6
+new_branch_3
+---------------------------
+branch 3
+pr 7
+pr 8
+
